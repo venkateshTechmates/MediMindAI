@@ -1,0 +1,114 @@
+@page "/admin/audit"
+@inject HttpClient Http
+
+<PageTitle>MediMind AI – Audit Log</PageTitle>
+
+<div class="admin-container">
+    <h2>📋 Audit Log</h2>
+
+    <div class="filters-bar">
+        <div class="filter-group">
+            <label>User</label>
+            <input type="text" @bind="_filterUser" placeholder="Filter by user…" />
+        </div>
+        <div class="filter-group">
+            <label>Action</label>
+            <input type="text" @bind="_filterAction" placeholder="Filter by action…" />
+        </div>
+        <div class="filter-group">
+            <label>From</label>
+            <input type="date" @bind="_filterFrom" />
+        </div>
+        <div class="filter-group">
+            <label>To</label>
+            <input type="date" @bind="_filterTo" />
+        </div>
+        <button class="btn-primary" @onclick="LoadAuditLogs">Search</button>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="loading">Loading audit records…</div>
+    }
+    else
+    {
+        <table class="audit-table">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>User</th>
+                    <th>Action</th>
+                    <th>Entity Type</th>
+                    <th>Entity ID</th>
+                    <th>IP Address</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var log in _logs)
+                {
+                    <tr>
+                        <td>@log.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>@log.UserId</td>
+                        <td>@log.Action</td>
+                        <td>@log.EntityType</td>
+                        <td title="@log.EntityId">@(log.EntityId.Length > 16 ? log.EntityId[..16] + "…" : log.EntityId)</td>
+                        <td>@log.IpAddress</td>
+                        <td title="@log.Details">@(log.Details?.Length > 60 ? log.Details[..60] + "…" : log.Details)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="pagination">
+            <button disabled="@(_page <= 1)" @onclick="() => { _page--; LoadAuditLogs(); }">← Previous</button>
+            <span>Page @_page</span>
+            <button disabled="@(_logs.Count < _pageSize)" @onclick="() => { _page++; LoadAuditLogs(); }">Next →</button>
+        </div>
+    }
+</div>
+
+@code {
+    private List<AuditLogView> _logs = new();
+    private bool _loading = true;
+    private string _filterUser = string.Empty;
+    private string _filterAction = string.Empty;
+    private DateTime? _filterFrom;
+    private DateTime? _filterTo;
+    private int _page = 1;
+    private int _pageSize = 50;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAuditLogs();
+    }
+
+    private async Task LoadAuditLogs()
+    {
+        _loading = true;
+        try
+        {
+            var query = $"/api/v1/audit?page={_page}&pageSize={_pageSize}";
+            if (!string.IsNullOrEmpty(_filterUser)) query += $"&user={Uri.EscapeDataString(_filterUser)}";
+            if (!string.IsNullOrEmpty(_filterAction)) query += $"&action={Uri.EscapeDataString(_filterAction)}";
+            if (_filterFrom.HasValue) query += $"&from={_filterFrom.Value:yyyy-MM-dd}";
+            if (_filterTo.HasValue) query += $"&to={_filterTo.Value:yyyy-MM-dd}";
+
+            _logs = await Http.GetFromJsonAsync<List<AuditLogView>>(query) ?? new();
+        }
+        catch { _logs = new(); }
+        finally { _loading = false; }
+    }
+
+    private record AuditLogView
+    {
+        public Guid Id { get; init; }
+        public string UserId { get; init; } = string.Empty;
+        public string Action { get; init; } = string.Empty;
+        public string EntityType { get; init; } = string.Empty;
+        public string EntityId { get; init; } = string.Empty;
+        public string? Details { get; init; }
+        public string? IpAddress { get; init; }
+        public DateTimeOffset Timestamp { get; init; }
+    }
+}

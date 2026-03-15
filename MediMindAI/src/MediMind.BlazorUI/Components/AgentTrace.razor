@@ -1,0 +1,38 @@
+@using MediMind.Core.Models
+
+<div class="agent-trace-panel">
+    <h4>🔍 Agent Execution Trace</h4>
+    <div class="trace-timeline">
+        @foreach (var result in AgentResults.OrderBy(r => r.LatencyMs))
+        {
+            <div class="trace-entry @(result.Success ? "success" : "failed")">
+                <div class="trace-icon">
+                    @(result.Success ? "✅" : "❌")
+                </div>
+                <div class="trace-content">
+                    <strong>@result.AgentName</strong>
+                    <span class="trace-time">@result.LatencyMs ms</span>
+                </div>
+                <div class="trace-confidence">
+                    Tokens: @result.TokensUsed
+                </div>
+                @if (!string.IsNullOrEmpty(result.Content))
+                {
+                    <p class="trace-summary">@(result.Content.Length > 100 ? result.Content[..100] + "…" : result.Content)</p>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="trace-totals">
+        <span>Total Agents: @AgentResults.Count</span>
+        <span>Succeeded: @AgentResults.Count(r => r.Success)</span>
+        <span>Failed: @AgentResults.Count(r => !r.Success)</span>
+        <span>Total Time: @AgentResults.Sum(r => r.LatencyMs) ms</span>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<AgentResult> AgentResults { get; set; } = Array.Empty<AgentResult>();
+}

@@ -1,0 +1,18 @@
+@inherits LayoutComponentBase
+
+<div class="app-layout">
+    <nav class="sidebar">
+        <div class="brand">
+            <h3>🧠 MediMind AI</h3>
+        </div>
+        <ul class="nav-menu">
+            <li><NavLink href="/chat" Match="NavLinkMatch.Prefix">💬 Clinical Chat</NavLink></li>
+            <li><NavLink href="/traces" Match="NavLinkMatch.Prefix">🔍 Agent Traces</NavLink></li>
+            <li><NavLink href="/admin/ingestion" Match="NavLinkMatch.Prefix">📥 Ingestion</NavLink></li>
+            <li><NavLink href="/admin/audit" Match="NavLinkMatch.Prefix">📋 Audit Log</NavLink></li>
+        </ul>
+    </nav>
+    <main class="main-content">
+        @Body
+    </main>
+</div>

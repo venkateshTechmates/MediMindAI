@@ -1,0 +1,29 @@
+@using MediMind.Core.Models
+
+<div class="source-citations">
+    <h4>📚 Source Citations</h4>
+    @foreach (var citation in Citations)
+    {
+        <div class="citation-card">
+            <div class="citation-header">
+                <span class="citation-source">@citation.DocumentName</span>
+                <span class="citation-score" title="Confidence Score">
+                    @(citation.ConfidenceScore.ToString("P0"))
+                </span>
+            </div>
+            @if (!string.IsNullOrEmpty(citation.Section))
+            {
+                <p class="citation-excerpt">Section: @citation.Section</p>
+            }
+            @if (!string.IsNullOrEmpty(citation.Category))
+            {
+                <span class="citation-chunk-id">Category: @citation.Category</span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<SourceCitation> Citations { get; set; } = Array.Empty<SourceCitation>();
+}

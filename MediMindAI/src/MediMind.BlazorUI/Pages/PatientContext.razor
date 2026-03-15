@@ -1,0 +1,177 @@
+@page "/patient/{PatientId:guid}"
+@using MediMind.Core.Entities
+@using System.Text.Json
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>MediMind AI – Patient Context</PageTitle>
+
+<div class="patient-context">
+    @if (_loading)
+    {
+        <div class="loading">Loading patient data…</div>
+    }
+    else if (_patient is null)
+    {
+        <div class="not-found">Patient not found.</div>
+    }
+    else
+    {
+        <div class="patient-header">
+            <h2>@_patient.FullName</h2>
+            <div class="patient-meta">
+                <span>DOB: @_patient.DateOfBirth.ToString("yyyy-MM-dd")</span>
+                <span>Gender: @_patient.Gender</span>
+                @if (!string.IsNullOrEmpty(_patient.BloodGroup))
+                {
+                    <span>Blood Group: @_patient.BloodGroup</span>
+                }
+            </div>
+            <button class="btn-chat" @onclick="OpenChat">💬 Open Clinical Chat</button>
+        </div>
+
+        <div class="patient-grid">
+            <!-- Allergies -->
+            <section class="card">
+                <h3>⚠️ Allergies</h3>
+                @if (_allergies?.Any() == true)
+                {
+                    <ul>
+                        @foreach (var allergy in _allergies)
+                        {
+                            <li class="allergy-item">@allergy</li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p class="no-data">No known allergies</p>
+                }
+            </section>
+
+            <!-- Active Medications -->
+            <section class="card">
+                <h3>💊 Active Medications</h3>
+                @if (_medications?.Any() == true)
+                {
+                    <table>
+                        <thead>
+                            <tr><th>Medication</th><th>Dosage</th><th>Frequency</th><th>Start Date</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var med in _medications)
+                            {
+                                <tr>
+                                    <td>@med.DrugName</td>
+                                    <td>@med.Dosage</td>
+                                    <td>@med.Frequency</td>
+                                    <td>@med.StartDate.ToString("yyyy-MM-dd")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <p class="no-data">No active medications</p>
+                }
+            </section>
+
+            <!-- Recent Lab Results -->
+            <section class="card">
+                <h3>🧪 Recent Lab Results (30 days)</h3>
+                @if (_labResults?.Any() == true)
+                {
+                    <table>
+                        <thead>
+                            <tr><th>Test</th><th>Value</th><th>Unit</th><th>Range</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var lab in _labResults)
+                            {
+                                <tr class="@(lab.IsAbnormal ? "abnormal" : "")">
+                                    <td>@lab.TestName</td>
+                                    <td>@lab.Value</td>
+                                    <td>@lab.Unit</td>
+                                    <td>@lab.ReferenceRange</td>
+                                    <td>@(lab.IsAbnormal ? "⚠️ Abnormal" : "✅ Normal")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <p class="no-data">No recent lab results</p>
+                }
+            </section>
+
+            <!-- Encounters -->
+            <section class="card full-width">
+                <h3>📋 Encounters</h3>
+                @if (_encounters?.Any() == true)
+                {
+                    @foreach (var enc in _encounters.OrderByDescending(e => e.EncounterDate))
+                    {
+                        <div class="encounter-item">
+                            <div class="encounter-header">
+                                <strong>@enc.ChiefComplaint</strong>
+                                <span>@enc.EncounterDate.ToString("yyyy-MM-dd")</span>
+                            </div>
+                            @if (!string.IsNullOrEmpty(enc.Diagnosis))
+                            {
+                                <p class="encounter-diagnosis">@enc.Diagnosis</p>
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <p class="no-data">No encounters recorded</p>
+                }
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid PatientId { get; set; }
+
+    private Patient? _patient;
+    private List<string>? _allergies;
+    private List<Medication>? _medications;
+    private List<LabResult>? _labResults;
+    private List<Encounter>? _encounters;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _patient = await Http.GetFromJsonAsync<Patient>($"/api/v1/patients/{PatientId}/profile");
+            _medications = await Http.GetFromJsonAsync<List<Medication>>($"/api/v1/patients/{PatientId}/medications?activeOnly=true");
+            _labResults = await Http.GetFromJsonAsync<List<LabResult>>($"/api/v1/patients/{PatientId}/labs?days=30");
+            _encounters = await Http.GetFromJsonAsync<List<Encounter>>($"/api/v1/patients/{PatientId}/encounters");
+
+            // Parse JSON-serialized allergies
+            if (!string.IsNullOrEmpty(_patient?.Allergies))
+            {
+                try { _allergies = JsonSerializer.Deserialize<List<string>>(_patient.Allergies); }
+                catch { _allergies = new List<string> { _patient.Allergies }; }
+            }
+        }
+        catch (Exception)
+        {
+            _patient = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OpenChat()
+    {
+        Navigation.NavigateTo($"/chat?patientId={PatientId}");
+    }
+}

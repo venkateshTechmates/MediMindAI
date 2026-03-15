@@ -1,0 +1,107 @@
+version: '3.9'
+
+services:
+  # ── SQL Server ──
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: medimind-sqlserver
+    environment:
+      SA_PASSWORD: "MediMind_Strong_Pwd_123!"
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "MediMind_Strong_Pwd_123!" -Q "SELECT 1" -C -b
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - medimind-net
+
+  # ── Qdrant Vector Database ──
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: medimind-qdrant
+    ports:
+      - "6333:6333"   # REST API
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - medimind-net
+
+  # ── Redis ──
+  redis:
+    image: redis:7-alpine
+    container_name: medimind-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - medimind-net
+
+  # ── MediMind API ──
+  medimind-api:
+    build:
+      context: .
+      dockerfile: src/MediMind.API/Dockerfile
+    container_name: medimind-api
+    ports:
+      - "5001:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=MediMindAI;User Id=sa;Password=MediMind_Strong_Pwd_123!;TrustServerCertificate=True;MultipleActiveResultSets=true
+      - ConnectionStrings__Redis=redis:6379
+      - Qdrant__Host=qdrant
+      - Qdrant__Port=6334
+      - Anthropic__UseMock=true
+      - Anthropic__ApiKey=
+      - Anthropic__Model=claude-sonnet-4-20250514
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - medimind-net
+
+  # ── MediMind Blazor UI ──
+  medimind-ui:
+    build:
+      context: .
+      dockerfile: src/MediMind.BlazorUI/Dockerfile
+    container_name: medimind-ui
+    ports:
+      - "5002:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ApiBaseUrl=http://medimind-api:8080
+    depends_on:
+      - medimind-api
+    networks:
+      - medimind-net
+
+volumes:
+  sqlserver-data:
+  qdrant-data:
+  redis-data:
+
+networks:
+  medimind-net:
+    driver: bridge

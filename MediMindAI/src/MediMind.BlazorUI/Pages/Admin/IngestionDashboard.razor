@@ -1,0 +1,159 @@
+@page "/admin/ingestion"
+@inject HttpClient Http
+
+<PageTitle>MediMind AI – Ingestion Dashboard</PageTitle>
+
+<div class="admin-container">
+    <h2>📥 Document Ingestion Dashboard</h2>
+
+    <div class="stats-row">
+        <div class="stat-card">
+            <span class="stat-value">@_jobs.Count</span>
+            <span class="stat-label">Total Jobs</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-value">@_jobs.Count(j => j.Status == "Completed")</span>
+            <span class="stat-label">Completed</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-value">@_jobs.Count(j => j.Status == "Processing")</span>
+            <span class="stat-label">Processing</span>
+        </div>
+        <div class="stat-card error">
+            <span class="stat-value">@_jobs.Count(j => j.Status == "Failed")</span>
+            <span class="stat-label">Failed</span>
+        </div>
+    </div>
+
+    <div class="actions-bar">
+        <button class="btn-primary" @onclick="() => _showNewJob = true">+ New Ingestion Job</button>
+        <button class="btn-secondary" @onclick="LoadJobs">🔄 Refresh</button>
+    </div>
+
+    @if (_showNewJob)
+    {
+        <div class="new-job-panel">
+            <h3>Create Ingestion Job</h3>
+            <div class="form-group">
+                <label>Source Type</label>
+                <select @bind="_newSourceType">
+                    <option value="file">File Upload</option>
+                    <option value="url">URL</option>
+                    <option value="fhir">FHIR Endpoint</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Source Path / URL</label>
+                <input type="text" @bind="_newSourcePath" placeholder="Enter source path or URL" />
+            </div>
+            <div class="form-group">
+                <label>Collection</label>
+                <select @bind="_newCollection">
+                    <option value="medimind_clinical">Clinical Documents</option>
+                    <option value="medimind_drug_formulary">Drug Formulary</option>
+                    <option value="medimind_research">Research</option>
+                </select>
+            </div>
+            <div class="form-actions">
+                <button class="btn-primary" @onclick="CreateJob">Submit</button>
+                <button class="btn-secondary" @onclick="() => _showNewJob = false">Cancel</button>
+            </div>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <div class="loading">Loading jobs…</div>
+    }
+    else
+    {
+        <table class="jobs-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Source</th>
+                    <th>Collection</th>
+                    <th>Status</th>
+                    <th>Documents</th>
+                    <th>Chunks</th>
+                    <th>Created</th>
+                    <th>Completed</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var job in _jobs.OrderByDescending(j => j.CreatedAt))
+                {
+                    <tr class="@job.Status.ToLower()">
+                        <td>@job.Id.ToString()[..8]…</td>
+                        <td>@job.SourceType</td>
+                        <td>@job.CollectionName</td>
+                        <td><span class="status-badge @job.Status.ToLower()">@job.Status</span></td>
+                        <td>@job.DocumentCount</td>
+                        <td>@job.ChunkCount</td>
+                        <td>@job.CreatedAt.ToString("g")</td>
+                        <td>@job.CompletedAt?.ToString("g")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private List<IngestionJobView> _jobs = new();
+    private bool _loading = true;
+    private bool _showNewJob;
+    private string _newSourceType = "file";
+    private string _newSourcePath = string.Empty;
+    private string _newCollection = "medimind_clinical";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadJobs();
+    }
+
+    private async Task LoadJobs()
+    {
+        _loading = true;
+        try
+        {
+            var result = await Http.GetFromJsonAsync<IngestionListResult>("/api/v1/ingestion?page=1&pageSize=50");
+            _jobs = result?.Items ?? new();
+        }
+        catch { _jobs = new(); }
+        finally { _loading = false; }
+    }
+
+    private async Task CreateJob()
+    {
+        var request = new
+        {
+            SourceType = _newSourceType,
+            SourcePath = _newSourcePath,
+            CollectionName = _newCollection
+        };
+
+        await Http.PostAsJsonAsync("/api/v1/ingestion", request);
+        _showNewJob = false;
+        _newSourcePath = string.Empty;
+        await LoadJobs();
+    }
+
+    private record IngestionJobView
+    {
+        public Guid Id { get; init; }
+        public string SourceType { get; init; } = string.Empty;
+        public string CollectionName { get; init; } = string.Empty;
+        public string Status { get; init; } = string.Empty;
+        public int DocumentCount { get; init; }
+        public int ChunkCount { get; init; }
+        public DateTimeOffset CreatedAt { get; init; }
+        public DateTimeOffset? CompletedAt { get; init; }
+    }
+
+    private record IngestionListResult
+    {
+        public List<IngestionJobView> Items { get; init; } = new();
+        public int Total { get; init; }
+    }
+}

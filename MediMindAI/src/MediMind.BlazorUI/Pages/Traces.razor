@@ -1,0 +1,281 @@
+@page "/traces"
+@inject IConfiguration Configuration
+@inject HttpClient Http
+@using System.Text.Json
+@using System.Text.Json.Serialization
+
+<div class="traces-page">
+    <div class="traces-header">
+        <h2>🔍 Distributed Traces — AI Agent Flow</h2>
+        <div class="trace-actions">
+            <button class="btn-refresh" @onclick="LoadTraces" disabled="@loading">
+                @if (loading) { <span class="spinner-sm"></span> }
+                else { <span>🔄 Refresh</span> }
+            </button>
+            <button class="btn-clear" @onclick="ClearTraces">🗑️ Clear</button>
+        </div>
+    </div>
+
+    @if (error is not null)
+    {
+        <div class="trace-error">⚠️ @error</div>
+    }
+
+    @if (traceGroups is not null && traceGroups.Count > 0)
+    {
+        <div class="trace-list">
+            @foreach (var group in traceGroups)
+            {
+                <div class="trace-card @(group.HasErrors ? "has-error" : "") @(selectedTraceId == group.TraceId ? "selected" : "")"
+                     @onclick="() => SelectTrace(group)">
+                    <div class="trace-card-header">
+                        <span class="trace-operation">@group.RootOperation</span>
+                        <span class="trace-duration">@FormatDuration(group.TotalDuration)</span>
+                    </div>
+                    <div class="trace-card-meta">
+                        <span class="trace-source">📦 @group.Source</span>
+                        <span class="trace-spans">🔗 @group.SpanCount spans</span>
+                        <span class="trace-time">🕐 @group.StartTime.ToLocalTime().ToString("HH:mm:ss.fff")</span>
+                        @if (group.HasErrors)
+                        {
+                            <span class="trace-error-badge">❌ Error</span>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else if (!loading)
+    {
+        <div class="traces-empty">
+            <div class="empty-icon">📊</div>
+            <h3>No traces captured yet</h3>
+            <p>Send a clinical query in the Chat to generate traces.<br/>
+               Traces show the full flow: Hub → Orchestrator → Agents → LLM calls.</p>
+        </div>
+    }
+
+    @if (selectedSpans is not null && selectedSpans.Count > 0)
+    {
+        <div class="trace-detail">
+            <h3>Trace Detail — @selectedTraceId?[..12]...</h3>
+            <div class="waterfall">
+                @{ var traceStart = selectedSpans.Min(s => s.StartTime); }
+                @foreach (var span in selectedSpans)
+                {
+                    var offset = (span.StartTime - traceStart).TotalMilliseconds;
+                    var totalRange = selectedSpans.Max(s => (s.StartTime - traceStart).TotalMilliseconds + s.Duration.TotalMilliseconds);
+                    var leftPct = totalRange > 0 ? (offset / totalRange * 100) : 0;
+                    var widthPct = totalRange > 0 ? (span.Duration.TotalMilliseconds / totalRange * 100) : 100;
+                    if (widthPct < 1) widthPct = 1;
+
+                    var depth = GetDepth(span, selectedSpans);
+                    var barColor = GetSpanColor(span);
+
+                    <div class="waterfall-row" style="padding-left: @(depth * 20)px">
+                        <div class="span-label">
+                            <span class="span-icon">@GetSpanIcon(span)</span>
+                            <span class="span-name" title="@span.DisplayName">@span.DisplayName</span>
+                            <span class="span-duration">@FormatDuration(span.Duration)</span>
+                        </div>
+                        <div class="span-bar-container">
+                            <div class="span-bar" 
+                                 style="left: @leftPct.ToString("F1")%; width: @widthPct.ToString("F1")%; background: @barColor;"
+                                 @onclick="() => ToggleSpanDetail(span.SpanId)">
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (expandedSpanId == span.SpanId)
+                    {
+                        <div class="span-tags" style="margin-left: @(depth * 20 + 20)px">
+                            <table>
+                                <tr><th>Key</th><th>Value</th></tr>
+                                <tr><td>Status</td><td>@span.Status</td></tr>
+                                <tr><td>Kind</td><td>@span.Kind</td></tr>
+                                <tr><td>Source</td><td>@span.Source</td></tr>
+                                @if (span.StatusDescription is not null)
+                                {
+                                    <tr><td>Status Desc</td><td class="error-text">@span.StatusDescription</td></tr>
+                                }
+                                @foreach (var tag in span.Tags)
+                                {
+                                    <tr><td>@tag.Key</td><td>@tag.Value</td></tr>
+                                }
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<TraceGroupDto>? traceGroups;
+    private List<TraceSpanDto>? selectedSpans;
+    private string? selectedTraceId;
+    private string? expandedSpanId;
+    private bool loading;
+    private string? error;
+    private string apiBase = "";
+
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        apiBase = Configuration["ApiBaseUrl"] ?? "http://localhost:5000";
+        await LoadTraces();
+    }
+
+    private async Task LoadTraces()
+    {
+        loading = true;
+        error = null;
+        StateHasChanged();
+
+        try
+        {
+            using var client = new HttpClient { BaseAddress = new Uri(apiBase) };
+            var response = await client.GetAsync("/api/traces?count=50");
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync();
+                traceGroups = JsonSerializer.Deserialize<List<TraceGroupDto>>(json, _jsonOptions) ?? new();
+            }
+            else
+            {
+                error = $"API returned {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            error = $"Failed to load traces: {ex.Message}";
+        }
+        finally
+        {
+            loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ClearTraces()
+    {
+        try
+        {
+            using var client = new HttpClient { BaseAddress = new Uri(apiBase) };
+            await client.DeleteAsync("/api/traces");
+            traceGroups = new();
+            selectedSpans = null;
+            selectedTraceId = null;
+        }
+        catch (Exception ex)
+        {
+            error = $"Failed to clear: {ex.Message}";
+        }
+        StateHasChanged();
+    }
+
+    private void SelectTrace(TraceGroupDto group)
+    {
+        selectedTraceId = group.TraceId;
+        selectedSpans = group.Spans;
+        expandedSpanId = null;
+        StateHasChanged();
+    }
+
+    private void ToggleSpanDetail(string spanId)
+    {
+        expandedSpanId = expandedSpanId == spanId ? null : spanId;
+        StateHasChanged();
+    }
+
+    private static string FormatDuration(TimeSpan duration)
+    {
+        if (duration.TotalSeconds >= 1) return $"{duration.TotalSeconds:F2}s";
+        return $"{duration.TotalMilliseconds:F1}ms";
+    }
+
+    private static int GetDepth(TraceSpanDto span, List<TraceSpanDto> allSpans)
+    {
+        int depth = 0;
+        var current = span;
+        while (current.ParentSpanId != "0000000000000000")
+        {
+            var parent = allSpans.FirstOrDefault(s => s.SpanId == current.ParentSpanId);
+            if (parent is null) break;
+            depth++;
+            current = parent;
+        }
+        return depth;
+    }
+
+    private static string GetSpanColor(TraceSpanDto span)
+    {
+        if (span.Status == "Error") return "#ef4444";
+        return span.Source switch
+        {
+            "MediMind.Hub" => "#8b5cf6",
+            "MediMind.Orchestrator" => "#3b82f6",
+            "MediMind.Agents" => "#10b981",
+            "MediMind.LLM" => "#f59e0b",
+            "MediMind.RAG" => "#06b6d4",
+            "MediMind.Plugins" => "#ec4899",
+            "MediMind.Middleware" => "#a855f7",
+            "MediMind.Data" => "#14b8a6",
+            "MediMind.API" => "#f97316",
+            _ => "#6b7280"
+        };
+    }
+
+    private static string GetSpanIcon(TraceSpanDto span)
+    {
+        if (span.Status == "Error") return "❌";
+        return span.Source switch
+        {
+            "MediMind.Hub" => "📡",
+            "MediMind.Orchestrator" => "🎯",
+            "MediMind.Agents" => "🤖",
+            "MediMind.LLM" => "🧠",
+            "MediMind.RAG" => "🔍",
+            "MediMind.Plugins" => "🔌",
+            "MediMind.Middleware" => "🛡️",
+            "MediMind.Data" => "🗄️",
+            "MediMind.API" => "🌐",
+            _ => "⚙️"
+        };
+    }
+
+    // ── DTOs ──
+
+    private class TraceGroupDto
+    {
+        public string TraceId { get; set; } = "";
+        public string RootOperation { get; set; } = "";
+        public string Source { get; set; } = "";
+        public DateTime StartTime { get; set; }
+        public TimeSpan TotalDuration { get; set; }
+        public int SpanCount { get; set; }
+        public bool HasErrors { get; set; }
+        public List<TraceSpanDto> Spans { get; set; } = new();
+    }
+
+    private class TraceSpanDto
+    {
+        public string TraceId { get; set; } = "";
+        public string SpanId { get; set; } = "";
+        public string ParentSpanId { get; set; } = "";
+        public string OperationName { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public string Source { get; set; } = "";
+        public string Kind { get; set; } = "";
+        public string Status { get; set; } = "";
+        public string? StatusDescription { get; set; }
+        public DateTime StartTime { get; set; }
+        public TimeSpan Duration { get; set; }
+        public Dictionary<string, string> Tags { get; set; } = new();
+    }
+}

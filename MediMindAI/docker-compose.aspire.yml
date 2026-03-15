@@ -1,0 +1,15 @@
+# Aspire Dashboard — Standalone container for viewing OpenTelemetry traces & metrics
+# Run:  docker compose -f docker-compose.aspire.yml up -d
+# Open: http://localhost:18888
+
+services:
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:9.0
+    container_name: medimind-aspire-dashboard
+    ports:
+      - "18888:18888"   # Dashboard UI
+      - "4317:18889"    # OTLP gRPC receiver (mapped to host 4317)
+    environment:
+      - DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS=true
+      - DASHBOARD__OTLP__PRIMARYAPIKEY=
+    restart: unless-stopped

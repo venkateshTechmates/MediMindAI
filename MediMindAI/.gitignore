@@ -1,0 +1,227 @@
+###############################################################################
+# .NET / ASP.NET Core
+###############################################################################
+
+# Build outputs
+[Bb]in/
+[Oo]bj/
+out/
+publish/
+[Pp]ublish/
+
+# .NET / MSBuild
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.pidb
+*.booproj
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+!**/packages/build/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+# MSBuild / Test
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+[Cc]overage*/
+_NCrunch_*
+nCrunchTemp_*
+*.ncrunchproject
+
+# Entity Framework Core migrations (auto-generated)
+# Uncomment if you don't want to commit migrations:
+# **/Migrations/*.cs
+# !**/Migrations/*Designer.cs
+
+# Runtime / Crash dumps
+*.dmp
+*.mdmp
+hs_err_pid*
+
+###############################################################################
+# Visual Studio / IDEs
+###############################################################################
+
+.vs/
+.vscode/
+.idea/
+*.suo
+*.ntvs_analysis.dat
+*.njsproj
+*.sln.ide
+.ionide/
+*.rsuser
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# Rider
+.idea/
+*.sln.iml
+
+###############################################################################
+# Secrets & Environment
+###############################################################################
+
+.env
+*.env
+.env.local
+.env.*.local
+!.env.example
+
+# Azure / Cloud secrets
+local.settings.json
+appsettings.Production.json
+appsettings.Staging.json
+secrets.json
+**/secrets.json
+
+###############################################################################
+# GenAI / LLM / ML specific
+###############################################################################
+
+# Model weights & embeddings
+*.bin
+*.pt
+*.pth
+*.onnx
+*.gguf
+*.ggml
+*.safetensors
+models/
+weights/
+checkpoints/
+
+# Embedding / vector caches
+embeddings_cache/
+vector_cache/
+.cache/
+__pycache__/
+*.pkl
+*.pickle
+*.npy
+*.npz
+*.h5
+*.hdf5
+
+# Hugging Face / ML artifacts
+.transformers_cache/
+.hf_cache/
+hf_cache/
+transformers_cache/
+sentence_transformers/
+
+# Jupyter / Python ML
+*.ipynb_checkpoints
+.jupyter/
+.ipython/
+
+# LLM prompt logs / traces (may contain PHI)
+prompt_logs/
+trace_logs/
+agent_traces/
+
+###############################################################################
+# Docker
+###############################################################################
+
+docker-compose.override.yml
+.docker/
+
+###############################################################################
+# Logs
+###############################################################################
+
+*.log
+logs/
+log/
+Logs/
+
+# Serilog / Seq local files
+*.clef
+
+###############################################################################
+# OS
+###############################################################################
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+###############################################################################
+# Test / Coverage artifacts
+###############################################################################
+
+coverage.json
+coverage.opencover.xml
+coverage.cobertura.xml
+lcov.info
+*.lcov
+reportgenerator/
+CoverageReport/
+
+###############################################################################
+# Azure / Kubernetes / Helm
+###############################################################################
+
+.azure/
+*.tfstate
+*.tfstate.backup
+.terraform/
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+kubeconfig
+*.kubeconfig
+
+###############################################################################
+# Publish / Deployment
+###############################################################################
+
+/publish/
+wwwroot/dist/
+bundleconfig.json
+
+###############################################################################
+# Misc
+###############################################################################
+
+node_modules/
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+*.bak
+*.tmp
+*.temp
+~$*

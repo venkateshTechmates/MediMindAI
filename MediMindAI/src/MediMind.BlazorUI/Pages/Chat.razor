@@ -1,0 +1,378 @@
+@page "/chat"
+@using Microsoft.AspNetCore.SignalR.Client
+@using MediMind.Core.Models
+@using Markdig
+@inject NavigationManager Navigation
+@inject IConfiguration Configuration
+@implements IAsyncDisposable
+
+<PageTitle>MediMind AI – Clinical Chat</PageTitle>
+
+<div class="chat-container">
+    <div class="chat-header">
+        <div class="chat-header-left">
+            <div class="header-icon">🧠</div>
+            <div>
+                <h2>MediMind Clinical Intelligence</h2>
+                <span class="header-subtitle">AI-Powered Clinical Decision Support</span>
+            </div>
+        </div>
+        <div class="chat-header-right">
+            @if (_activePatientId.HasValue)
+            {
+                <span class="patient-badge">
+                    <span class="badge-dot"></span>
+                    Patient: @_activePatientId.Value.ToString()[..8]…
+                    <button class="btn-clear" @onclick="ClearPatientContext">✕</button>
+                </span>
+            }
+            <button class="btn-new-chat" @onclick="StartNewSession" title="New session">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                New Chat
+            </button>
+        </div>
+    </div>
+
+    <div class="messages-panel" @ref="_messagesPanel">
+        @if (!_messages.Any() && !_isStreaming)
+        {
+            <div class="welcome-screen">
+                <div class="welcome-icon">🩺</div>
+                <h3>How can I help you today?</h3>
+                <p>Ask any clinical question — I'll provide evidence-based guidance with citations.</p>
+                <div class="quick-prompts">
+                    <button class="quick-prompt" @onclick="@(() => SetQuery("List differential diagnoses for chest pain in a 45-year-old male"))">
+                        🫀 Chest pain differentials
+                    </button>
+                    <button class="quick-prompt" @onclick="@(() => SetQuery("What are the treatment options for Type 2 diabetes mellitus?"))">
+                        💊 T2DM treatment options
+                    </button>
+                    <button class="quick-prompt" @onclick="@(() => SetQuery("List contraindications for ACE inhibitors"))">
+                        ⚠️ ACE inhibitor contraindications
+                    </button>
+                    <button class="quick-prompt" @onclick="@(() => SetQuery("What are the diagnostic criteria for sepsis?"))">
+                        🔬 Sepsis diagnostic criteria
+                    </button>
+                </div>
+            </div>
+        }
+
+        @foreach (var msg in _messages)
+        {
+            <div class="message-row @(msg.IsUser ? "user-row" : "assistant-row")">
+                <div class="avatar @(msg.IsUser ? "user-avatar" : "ai-avatar")">
+                    @(msg.IsUser ? "👤" : "🧠")
+                </div>
+                <div class="message-bubble @(msg.IsUser ? "user-bubble" : "ai-bubble")">
+                    <div class="message-meta">
+                        <span class="sender-name">@(msg.IsUser ? "You" : "MediMind AI")</span>
+                        <span class="timestamp">@msg.Timestamp.ToString("HH:mm")</span>
+                    </div>
+                    <div class="message-content @(msg.IsUser ? "" : "markdown-body")">
+                        @if (msg.IsUser)
+                        {
+                            @msg.Content
+                        }
+                        else
+                        {
+                            @((MarkupString)RenderMarkdown(msg.Content))
+                        }
+                    </div>
+
+                    @if (msg.Citations?.Any() == true)
+                    {
+                        <div class="citations-section">
+                            <div class="citations-header">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                                Sources (@msg.Citations.Count)
+                            </div>
+                            @foreach (var cite in msg.Citations)
+                            {
+                                <div class="citation-chip">
+                                    <span class="chip-source">@cite.Source</span>
+                                    <span class="chip-score">@cite.RelevanceScore.ToString("P0")</span>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (msg.AgentTraces?.Any() == true)
+                    {
+                        <details class="traces-section">
+                            <summary>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                                Agent Trace · @msg.AgentTraces.Count agents · @msg.AgentTraces.Sum(t => t.DurationMs)ms total
+                            </summary>
+                            <div class="traces-list">
+                                @foreach (var trace in msg.AgentTraces)
+                                {
+                                    <div class="trace-entry @trace.Status.ToLower()">
+                                        <span class="trace-dot @trace.Status.ToLower()"></span>
+                                        <span class="trace-name">@trace.AgentName</span>
+                                        <span class="trace-time">@(trace.DurationMs)ms</span>
+                                    </div>
+                                }
+                            </div>
+                        </details>
+                    }
+                </div>
+            </div>
+        }
+
+        @if (_isStreaming)
+        {
+            <div class="message-row assistant-row">
+                <div class="avatar ai-avatar">🧠</div>
+                <div class="message-bubble ai-bubble streaming">
+                    <div class="message-meta">
+                        <span class="sender-name">MediMind AI</span>
+                        <span class="streaming-badge">
+                            <span class="pulse-dot"></span> Generating…
+                        </span>
+                    </div>
+                    <div class="message-content markdown-body">
+                        @if (string.IsNullOrEmpty(_streamBuffer))
+                        {
+                            <div class="thinking-dots">
+                                <span></span><span></span><span></span>
+                            </div>
+                        }
+                        else
+                        {
+                            @((MarkupString)RenderMarkdown(_streamBuffer))
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="scroll-anchor" @ref="_scrollAnchor"></div>
+    </div>
+
+    <div class="input-panel">
+        <div class="input-wrapper">
+            <textarea @bind="_queryText"
+                      @bind:event="oninput"
+                      @onkeydown="HandleKeyDown"
+                      placeholder="Ask a clinical question…  (Enter to send, Shift+Enter for new line)"
+                      rows="1" />
+            <button class="btn-send @(_isStreaming ? "sending" : "")" @onclick="SendQuery" disabled="@(_isStreaming || string.IsNullOrWhiteSpace(_queryText))">
+                @if (_isStreaming)
+                {
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                }
+                else
+                {
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                }
+            </button>
+        </div>
+        <div class="input-footer">
+            MediMind AI provides clinical decision support — always verify with clinical judgment.
+        </div>
+    </div>
+</div>
+
+@code {
+    private HubConnection? _hubConnection;
+    private readonly List<ChatMessage> _messages = new();
+    private string _queryText = string.Empty;
+    private string _streamBuffer = string.Empty;
+    private bool _isStreaming;
+    private Guid _sessionId = Guid.NewGuid();
+    private Guid? _activePatientId;
+    private ElementReference _messagesPanel;
+    private ElementReference _scrollAnchor;
+
+    private static readonly MarkdownPipeline _markdownPipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .Build();
+
+    private static string RenderMarkdown(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        return Markdown.ToHtml(text, _markdownPipeline);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var apiBase = Configuration["ApiBaseUrl"] ?? "http://localhost:5000";
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl($"{apiBase}/hubs/clinical-chat")
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hubConnection.On<ClinicalResponse>("ReceiveComplete", response =>
+        {
+            _isStreaming = false;
+            _streamBuffer = string.Empty;
+
+            _messages.Add(new ChatMessage
+            {
+                IsUser = false,
+                Content = response.Content,
+                Timestamp = DateTimeOffset.Now,
+                Citations = response.Citations.Select(c => new CitationDisplay
+                {
+                    Source = c.DocumentName,
+                    Excerpt = c.Section ?? "",
+                    RelevanceScore = (float)c.ConfidenceScore
+                }).ToList(),
+                AgentTraces = response.AgentResults.Select(a => new TraceDisplay
+                {
+                    AgentName = a.AgentName,
+                    DurationMs = a.LatencyMs,
+                    Status = a.Success ? "Success" : "Failed"
+                }).ToList()
+            });
+
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hubConnection.On<Guid>("PatientContextUpdated", patientId =>
+        {
+            _activePatientId = patientId;
+            InvokeAsync(StateHasChanged);
+        });
+
+        _hubConnection.On<string>("SessionCleared", _ =>
+        {
+            _activePatientId = null;
+            InvokeAsync(StateHasChanged);
+        });
+
+        await _hubConnection.StartAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // No-op: auto-scroll handled by CSS scroll-behavior
+        await Task.CompletedTask;
+    }
+
+    private void SetQuery(string text)
+    {
+        _queryText = text;
+        StateHasChanged();
+    }
+
+    private void StartNewSession()
+    {
+        _messages.Clear();
+        _sessionId = Guid.NewGuid();
+        _activePatientId = null;
+        _streamBuffer = string.Empty;
+        _isStreaming = false;
+        StateHasChanged();
+    }
+
+    private async Task SendQuery()
+    {
+        if (string.IsNullOrWhiteSpace(_queryText) || _hubConnection is null) return;
+
+        var queryText = _queryText.Trim();
+        _queryText = string.Empty;
+
+        _messages.Add(new ChatMessage
+        {
+            IsUser = true,
+            Content = queryText,
+            Timestamp = DateTimeOffset.Now
+        });
+
+        _isStreaming = true;
+        _streamBuffer = string.Empty;
+        StateHasChanged();
+
+        var query = new ClinicalQuery
+        {
+            QueryText = queryText,
+            SessionId = _sessionId,
+            PatientId = _activePatientId,
+            UserId = "blazor-user"
+        };
+
+        // Use streaming
+        try
+        {
+            var stream = _hubConnection.StreamAsync<string>("StreamQuery", query);
+            await foreach (var token in stream)
+            {
+                _streamBuffer += token;
+                StateHasChanged();
+            }
+
+            // Streaming complete — move buffer to final message
+            _messages.Add(new ChatMessage
+            {
+                IsUser = false,
+                Content = _streamBuffer,
+                Timestamp = DateTimeOffset.Now
+            });
+            _streamBuffer = string.Empty;
+            _isStreaming = false;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _isStreaming = false;
+            _messages.Add(new ChatMessage
+            {
+                IsUser = false,
+                Content = $"⚠️ Error: {ex.Message}",
+                Timestamp = DateTimeOffset.Now
+            });
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await SendQuery();
+        }
+    }
+
+    private async Task ClearPatientContext()
+    {
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.InvokeAsync("ClearSession", _sessionId.ToString());
+        }
+        _activePatientId = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+
+    // ── View models ──
+
+    private record ChatMessage
+    {
+        public bool IsUser { get; init; }
+        public string Content { get; init; } = string.Empty;
+        public DateTimeOffset Timestamp { get; init; }
+        public List<CitationDisplay>? Citations { get; init; }
+        public List<TraceDisplay>? AgentTraces { get; init; }
+    }
+
+    private record CitationDisplay
+    {
+        public string Source { get; init; } = string.Empty;
+        public string Excerpt { get; init; } = string.Empty;
+        public float RelevanceScore { get; init; }
+    }
+
+    private record TraceDisplay
+    {
+        public string AgentName { get; init; } = string.Empty;
+        public long DurationMs { get; init; }
+        public string Status { get; init; } = string.Empty;
+    }
+}
